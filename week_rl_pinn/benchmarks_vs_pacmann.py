@@ -754,7 +754,14 @@ def run_multi_seed(pde_name: str,
 # ═══════════════════════════════════════════════════
 
 _COLORS = {'Uniform': '#e74c3c', 'RAR': '#f39c12',
-           'PACMANN': '#3498db', 'RL':  '#2ecc71'}
+           'PACMANN': '#3498db', 'RL':  '#2ecc71',
+           'RL-PPO':  '#16a085', 'RL-PPO-transfer': '#1abc9c',
+           'RL-fresh': '#95a5a6', 'RL-transfer(0)': '#27ae60',
+           'RL-transfer(ft)': '#2ecc71'}
+
+def _color(name: str) -> str:
+    """Return a plot color, falling back to grey for unknown methods."""
+    return _COLORS.get(name, '#7f8c8d')
 
 
 def plot_multi_seed(agg: dict, pde_name: str, pde, n_seeds: int):
@@ -767,21 +774,22 @@ def plot_multi_seed(agg: dict, pde_name: str, pde, n_seeds: int):
         n  = np.array(res['n_colloc'])
         mu = res['l2_mean']
         sd = res['l2_std']
-        ax.semilogy(n, mu, color=_COLORS[name], lw=2, marker='o', ms=3, label=name)
+        ax.semilogy(n, mu, color=_color(name), lw=2, marker='o', ms=3, label=name)
         ax.fill_between(n, np.maximum(mu - sd, 1e-5), mu + sd,
-                        color=_COLORS[name], alpha=0.15)
+                        color=_color(name), alpha=0.15)
     ax.set_xlabel('Collocation points')
     ax.set_ylabel('L2 relative error')
     ax.set_title(f'{pde_name} — L2 vs budget\n({n_seeds} seeds, mean ± std)')
     ax.legend(); ax.grid(alpha=0.3)
 
-    # Final collocation scatter: RL vs PACMANN
+    # Final collocation scatter: RL variant vs PACMANN
     ax = axes[1]
-    for name in ('RL', 'PACMANN'):
+    rl_key = next((k for k in agg if k.startswith('RL')), None)
+    for name in ([rl_key] if rl_key else []) + ['PACMANN']:
         if name not in agg: continue
         r = agg[name]
         ax.scatter(r['final_x'].numpy(), r['final_t'].numpy(),
-                   s=1, alpha=0.2, color=_COLORS[name], label=name)
+                   s=1, alpha=0.2, color=_color(name), label=name)
     ax.set_xlabel('x'); ax.set_ylabel('t')
     ax.set_title('Final collocation: RL vs PACMANN')
     ax.legend(markerscale=6); ax.grid(alpha=0.3)
@@ -791,7 +799,7 @@ def plot_multi_seed(agg: dict, pde_name: str, pde, n_seeds: int):
     names = list(agg.keys())
     means = [agg[n]['final_l2_mean'] for n in names]
     stds  = [agg[n]['final_l2_std']  for n in names]
-    bars  = ax.bar(names, means, color=[_COLORS[n] for n in names],
+    bars  = ax.bar(names, means, color=[_color(n) for n in names],
                    edgecolor='white', yerr=stds, capsize=4)
     for bar, m, s in zip(bars, means, stds):
         ax.text(bar.get_x() + bar.get_width()/2,
