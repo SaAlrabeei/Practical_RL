@@ -634,7 +634,9 @@ def run_comparison(pde_name: str = 'burgers',
     strategies = {
         'Uniform': UniformSpaceTime(n_total, xr, tr),
         'RAR':     RARSpaceTime(n_initial, n_add, x_range=xr, t_range=tr),
-        'PACMANN': PACMANNCollocation(n_initial, n_steps=20, lr=1e-2,
+        # PACMANN starts with the full budget and moves points — never adds.
+        # This matches Visser et al. 2024 where N_colloc is fixed throughout.
+        'PACMANN': PACMANNCollocation(n_total, n_steps=20, lr=1e-2,
                                        x_range=xr, t_range=tr),
         'RL':      RLSpaceTime(n_initial, n_add, G=16, x_range=xr, t_range=tr),
     }
