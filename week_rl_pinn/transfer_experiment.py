@@ -203,7 +203,7 @@ def steps_to_threshold(per_seed: list, method: str,
         crossed = next((i for i, v in enumerate(l2_hist) if v < threshold),
                        None)
         if crossed is None:
-            results.append(max_steps)
+            results.append(np.inf)      # never reached — distinct from max
         else:
             results.append((crossed + 1) * epochs_per_step)
     return np.array(results, dtype=float)
@@ -280,7 +280,7 @@ def plot_speedup_table(speedup_data: dict, test_nus: list,
 
     # Build cell text
     def fmt(v):
-        return f'>{max_steps}' if v >= max_steps else f'{int(v):,}'
+        return f'never' if np.isinf(v) else f'{int(v):,}'
 
     rows = []
     for m in methods:
@@ -370,7 +370,7 @@ def print_latex_table(speedup_data: dict, test_nus: list,
     for nu_label in nu_labels:
         p = np.median(speedup_data[nu_label]['PACMANN'])
         r = np.median(speedup_data[nu_label]['RL-pretrained'])
-        speedup_vals.append('—' if r >= max_steps
+        speedup_vals.append('—' if np.isinf(r) or np.isinf(p)
                              else f'\\textbf{{{p/r:.2f}\\times}}')
     print('Speedup vs PACMANN & ' + ' & '.join(speedup_vals) + ' \\\\')
     print('\\bottomrule')
@@ -463,7 +463,7 @@ def main():
             nu_label = f'ν={nu*np.pi:.3f}/π'
             arr = speedup_data[nu_label][m]
             med, std = np.median(arr), arr.std()
-            tag = f'>{max_steps}' if med >= max_steps else f'{int(med):5,}'
+            tag = 'never' if np.isinf(med) else f'{int(med):5,}'
             print(f"  {tag:>8} ±{std:4.0f}", end='')
         print()
     print('='*68)
@@ -474,7 +474,7 @@ def main():
         nu_label = f'ν={nu*np.pi:.3f}/π'
         p = np.median(speedup_data[nu_label]['PACMANN'])
         r = np.median(speedup_data[nu_label]['RL-pretrained'])
-        sp = '  —' if r >= max_steps else f'  {p/r:6.2f}×'
+        sp = '  —' if (np.isinf(r) or np.isinf(p)) else f'  {p/r:6.2f}×'
         print(f"  {sp:>12}", end='')
     print('\n')
 
