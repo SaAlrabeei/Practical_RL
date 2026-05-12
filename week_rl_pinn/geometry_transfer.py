@@ -582,7 +582,7 @@ def print_summary(results, thr, epochs, n_steps):
     print(f"\n{'='*70}\n")
 
 
-def plot_results(results, thr, epochs, save_prefix='geometry_transfer'):
+def plot_results(results, thr, epochs, save_prefix=os.path.join(DIR, 'geometry_transfer')):
     methods = list(next(iter(results.values()))[0].keys())
     locs    = list(results.keys())
     n_locs  = len(locs)
@@ -723,7 +723,7 @@ if __name__ == '__main__':
                  eval_kw['epochs'])
 
     # Save raw
-    np.savez('geometry_transfer_results.npz',
+    np.savez(os.path.join(DIR, 'geometry_transfer_results.npz'),
              test_locs=np.array(test_locs),
              train_locs=np.array(TRAIN_LOCS),
              threshold=args.threshold)
