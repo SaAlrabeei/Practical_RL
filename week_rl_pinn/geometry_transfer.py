@@ -49,7 +49,17 @@ N_REPLACE  = 100      # points replaced per step
 G          = 16       # RL grid resolution
 
 TRAIN_LOCS = [(0.2,0.5),(0.5,0.8),(0.8,0.3),(0.3,0.2),(0.7,0.7)]
-TEST_LOCS  = [(0.4,0.6),(0.7,0.2),(0.5,0.5)]
+TEST_LOCS  = [
+    (0.4, 0.6),   # original — mid-left area
+    (0.7, 0.2),   # original — hard (near bottom-right)
+    (0.5, 0.5),   # original — center
+    (0.2, 0.8),   # top-left
+    (0.85, 0.8),  # top-right
+    (0.15, 0.15), # bottom-left corner
+    (0.6, 0.3),   # center-bottom
+    (0.85, 0.5),  # right-center
+    (0.55, 0.45), # near center
+]
 
 # ── Colours ───────────────────────────────────────────────────
 COLORS = {'Uniform':'#e74c3c','RAR':'#f39c12',
@@ -553,14 +563,16 @@ def print_summary(results, thr, epochs, n_steps):
     max_s    = (n_steps + 1) * epochs
     locs     = list(results.keys())
 
-    print(f"\n{'='*70}")
+    col_w = 14
+    sep_w = 18 + col_w * len(locs)
+    print(f"\n{'='*sep_w}")
     print(f"  Gradient steps to L2 < {thr}  (median, {len(next(iter(results.values())))} seeds)")
-    print(f"{'='*70}")
+    print(f"{'='*sep_w}")
     print(f"{'Method':<18}", end='')
     for sx,sy in locs:
-        print(f"  src=({sx},{sy})", end='')
+        print(f"  {'src=('+str(sx)+','+str(sy)+')':>{col_w-2}}", end='')
     print()
-    print('-'*70)
+    print('-'*sep_w)
 
     for m in methods:
         print(f"{m:<18}", end='')
@@ -568,7 +580,7 @@ def print_summary(results, thr, epochs, n_steps):
             vals = [r[m]['steps_to_thr'] for r in results[loc]]
             med  = np.median(vals)
             tag  = 'never' if np.isinf(med) else f'{int(med):,}'
-            print(f"  {tag:>12}", end='')
+            print(f"  {tag:>{col_w-2}}", end='')
         print()
 
     print()
@@ -578,8 +590,8 @@ def print_summary(results, thr, epochs, n_steps):
         r_vals = [r['RL-pretrained']['steps_to_thr'] for r in results[loc]]
         p_med  = np.median(p_vals); r_med = np.median(r_vals)
         tag    = '—' if (np.isinf(p_med) or np.isinf(r_med)) else f'{p_med/r_med:.2f}×'
-        print(f"  {tag:>12}", end='')
-    print(f"\n{'='*70}\n")
+        print(f"  {tag:>{col_w-2}}", end='')
+    print(f"\n{'='*sep_w}\n")
 
 
 def plot_results(results, thr, epochs, save_prefix=os.path.join(DIR, 'geometry_transfer')):
@@ -587,11 +599,13 @@ def plot_results(results, thr, epochs, save_prefix=os.path.join(DIR, 'geometry_t
     locs    = list(results.keys())
     n_locs  = len(locs)
 
-    fig, axes = plt.subplots(1, n_locs, figsize=(6*n_locs, 5), sharey=True)
-    if n_locs == 1: axes = [axes]
+    ncols = min(n_locs, 3)
+    nrows = (n_locs + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(6*ncols, 5*nrows), sharey=True)
+    axes_flat = np.array(axes).flatten() if n_locs > 1 else [axes]
 
     for col, loc in enumerate(locs):
-        ax = axes[col]
+        ax = axes_flat[col]
         sx, sy = loc
         seed_results = results[loc]
 
@@ -610,12 +624,16 @@ def plot_results(results, thr, epochs, save_prefix=os.path.join(DIR, 'geometry_t
         ax.text(gs[0], thr*1.12, f'τ={thr}', fontsize=8, color='#555')
         ax.set_title(f'src = ({sx}, {sy})  [unseen]', fontsize=11)
         ax.set_xlabel('PINN gradient steps')
-        if col==0: ax.set_ylabel('L2 relative error')
+        if col % ncols == 0: ax.set_ylabel('L2 relative error')
         ax.grid(alpha=0.25)
         ax.xaxis.set_major_formatter(plt.FuncFormatter(
             lambda x,_: f'{int(x/1000)}k' if x>=1000 else str(int(x))))
 
-    axes[0].legend(fontsize=9)
+    # hide unused subplots
+    for idx in range(n_locs, len(axes_flat)):
+        axes_flat[idx].set_visible(False)
+
+    axes_flat[0].legend(fontsize=9)
     fig.suptitle('2D Poisson — RL geometry transfer vs from-scratch methods\n'
                  '(pre-trained on different source locations, tested on unseen ones)',
                  fontsize=12, y=1.01)
@@ -632,16 +650,20 @@ def plot_results(results, thr, epochs, save_prefix=os.path.join(DIR, 'geometry_t
 def _plot_weight_maps(results, prefix):
     """Show what the RL agent attends to on each unseen geometry."""
     locs  = list(results.keys())
-    fig, axes = plt.subplots(2, len(locs), figsize=(5*len(locs), 8))
-    if len(locs)==1: axes = axes.reshape(2,1)
+    wm_cols = min(len(locs), 3)
+    wm_rows = 2 * ((len(locs) + wm_cols - 1) // wm_cols)
+    fig, axes = plt.subplots(wm_rows, wm_cols, figsize=(5*wm_cols, 4*wm_rows))
+    axes = np.array(axes).reshape(wm_rows, wm_cols)
 
-    for col, loc in enumerate(locs):
+    for idx, loc in enumerate(locs):
         sx, sy = loc
         wh = results[loc][0]['RL-pretrained']['weight_history']
         if len(wh) < 2:
             continue
-        for row, (step_i, wmap) in enumerate(wh[:2]):
-            ax = axes[row][col]
+        grid_col = idx % wm_cols
+        section_row = (idx // wm_cols) * 2
+        for step_offset, (step_i, wmap) in enumerate(wh[:2]):
+            ax = axes[section_row + step_offset][grid_col]
             im = ax.imshow(wmap.numpy().T, origin='lower',
                            extent=[0,1,0,1], cmap='hot', aspect='auto')
             ax.scatter([sx],[sy], c='cyan', s=80, marker='*',
