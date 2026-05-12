@@ -48,17 +48,18 @@ N_TOTAL    = 2000     # collocation points
 N_REPLACE  = 100      # points replaced per step
 G          = 16       # RL grid resolution
 
-TRAIN_LOCS = [(0.2,0.5),(0.5,0.8),(0.8,0.3),(0.3,0.2),(0.7,0.7)]
-TEST_LOCS  = [
-    (0.4, 0.6),   # original — mid-left area
-    (0.7, 0.2),   # original — hard (near bottom-right)
-    (0.5, 0.5),   # original — center
-    (0.2, 0.8),   # top-left
-    (0.85, 0.8),  # top-right
-    (0.15, 0.15), # bottom-left corner
-    (0.6, 0.3),   # center-bottom
-    (0.85, 0.5),  # right-center
-    (0.55, 0.45), # near center
+TRAIN_LOCS = [                       # 4×5 grid covering [0.1, 0.7] × [0.1, 0.9]
+    (0.1,0.1),(0.1,0.3),(0.1,0.5),(0.1,0.7),(0.1,0.9),
+    (0.3,0.1),(0.3,0.3),(0.3,0.5),(0.3,0.7),(0.3,0.9),
+    (0.5,0.1),(0.5,0.3),(0.5,0.5),(0.5,0.7),(0.5,0.9),
+    (0.7,0.1),(0.7,0.3),(0.7,0.5),(0.7,0.7),(0.7,0.9),
+]
+TEST_LOCS  = [                       # 5 off-grid unseen locations
+    (0.2, 0.6),   # interpolation zone
+    (0.4, 0.4),   # center area
+    (0.6, 0.2),   # hard — near bottom edge
+    (0.8, 0.8),   # top-right
+    (0.9, 0.4),   # hard — right edge
 ]
 
 # ── Colours ───────────────────────────────────────────────────
