@@ -523,6 +523,9 @@ def run_transfer(agent, test_locs, n_steps, epochs, seeds, thr, verbose):
             frozen = copy.deepcopy(agent)
             for p in frozen.parameters(): p.requires_grad_(False)
 
+            # Seed before creating strategies so initial collocation is reproducible
+            torch.manual_seed(seed + 1000)
+            np.random.seed(seed + 1000)
             strats = {
                 'Uniform': UniformSpatial(N_TOTAL),
                 'RAR':     RARSpatial(N_TOTAL, N_REPLACE),
