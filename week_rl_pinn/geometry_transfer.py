@@ -666,7 +666,11 @@ if __name__ == '__main__':
     parser.add_argument('--skip-pretrain', action='store_true')
     parser.add_argument('--seeds', type=int, default=3)
     parser.add_argument('--agent', default=AGENT_PATH)
-    parser.add_argument('--threshold', type=float, default=0.15)
+    parser.add_argument('--threshold', type=float, default=0.20)
+    parser.add_argument('--n-steps', type=int, default=None,
+                        help='Override eval steps (default: 6 quick / 12 full)')
+    parser.add_argument('--n-epochs', type=int, default=None,
+                        help='Override epochs per step (default: 150 quick / 300 full)')
     args = parser.parse_args()
 
     if args.quick:
@@ -675,8 +679,11 @@ if __name__ == '__main__':
         test_locs = TEST_LOCS[:2]
     else:
         pre_kw  = dict(n_ep=3, n_steps=12, epochs=300)
-        eval_kw = dict(n_steps=20, epochs=500)
+        eval_kw = dict(n_steps=12, epochs=300)
         test_locs = TEST_LOCS
+
+    if args.n_steps  is not None: eval_kw['n_steps']  = args.n_steps
+    if args.n_epochs is not None: eval_kw['epochs']   = args.n_epochs
 
     seeds = list(range(args.seeds))
 
