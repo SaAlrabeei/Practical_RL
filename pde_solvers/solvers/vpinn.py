@@ -160,6 +160,9 @@ class VPINN:
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=self.step_size, gamma=self.gamma)
 
+        eps  = getattr(problem, 'eps',  1.0)
+        beta = getattr(problem, 'beta', 0.0)
+
         x_test, u_test = problem.test_grid()
 
         # Pre-compute f at quadrature points (fixed throughout training)
@@ -183,13 +186,16 @@ class VPINN:
 
             if problem.dim == 1:
                 du = u_grad[:, 0]                              # (Nq,)
-                # a(û,v_k) = ∫ û'·v_k' dx  ≈  Σ_q w_q · û'(x_q)·v_k'(x_q)
-                lhs = torch.sum(w * self.dv_dx1 * du,  dim=-1)    # (Nt,)
+                # a(û,v_k) = ∫ ε·û'·v_k' dx + ∫ β·û'·v_k dx
+                # Pure diffusion (β=0): just ε·∫û'·v_k'
+                lhs = torch.sum(
+                    w * (eps * self.dv_dx1 + beta * self.v_vals) * du,
+                    dim=-1)                                        # (Nt,)
                 rhs = torch.sum(w * self.v_vals * f_quad, dim=-1)  # (Nt,)
             else:
                 du1 = u_grad[:, 0]; du2 = u_grad[:, 1]
                 lhs = torch.sum(
-                    w * (self.dv_dx1 * du1 + self.dv_dx2 * du2), dim=-1)
+                    w * eps * (self.dv_dx1 * du1 + self.dv_dx2 * du2), dim=-1)
                 rhs = torch.sum(w * self.v_vals * f_quad, dim=-1)
 
             loss = torch.mean((lhs - rhs) ** 2)

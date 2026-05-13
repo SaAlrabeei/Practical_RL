@@ -1,23 +1,30 @@
 """
-PDE problem definitions  —  1-D and 2-D Poisson.
+PDE problem definitions  —  1-D and 2-D Poisson, 1-D Convection-Diffusion.
 
 Every problem exposes:
   .dim          : int (1 or 2)
   .lb / .ub     : domain bounds (scalar)
+  .eps          : diffusion coefficient   (default 1.0)
+  .beta         : convection coefficient  (default 0.0 = pure diffusion)
   .name         : str
   .exact_u(x)   : exact solution        (N, 1)
-  .source_f(x)  : RHS  f = -Δu          (N, 1)
+  .source_f(x)  : RHS                   (N, 1)
   .mollifier(x) : boundary-vanishing fn  (N, 1)  used by solvers
   .interior_points(n)
   .boundary_points()
   .test_grid(n)
   .l2_rel(u_pred, u_true)
 
-1-D problems  —  -u'' = f  on [0,1],  u(0)=u(1)=0
-─────────────────────────────────────────────────
+1-D Poisson  —  -u'' = f  on [0,1],  u(0)=u(1)=0
+────────────────────────────────────────────────────────
   Level 1  SmoothPoisson1D          u = sin(πx)
-  Level 2  LayerPoisson1D (k=15)    u = sin(πx)·tanh(k(x-½))   — interior layer
-  Level 3  OscPoisson1D   (n=8)     u = sin(nπx)                — spectral stress test
+  Level 2  LayerPoisson1D (k=15)    u = sin(πx)·tanh(k(x-½))
+  Level 3  OscPoisson1D   (n=8)     u = sin(nπx)
+
+1-D Convection-Diffusion  —  -ε·u'' + β·u' = f  on [0,1],  u(0)=u(1)=0
+────────────────────────────────────────────────────────────────────────
+  u = sin(πx)·(1 − e^((x−1)/ε))   — boundary layer of width ~ε at x=1
+  Péclet number  Pe = β/ε  controls sharpness of the layer.
 """
 
 import numpy as np
@@ -31,9 +38,11 @@ import torch
 class PDE1D:
     """Abstract 1-D PDE on [0, 1] with homogeneous Dirichlet BC."""
 
-    dim: int   = 1
-    lb:  float = 0.0
-    ub:  float = 1.0
+    dim:  int   = 1
+    lb:   float = 0.0
+    ub:   float = 1.0
+    eps:  float = 1.0   # diffusion coefficient
+    beta: float = 0.0   # convection coefficient (0 = pure diffusion / Poisson)
 
     @property
     def name(self) -> str:
@@ -192,3 +201,50 @@ class OscPoisson1D(PDE1D):
 
     def source_f(self, x):
         return (self.n * np.pi)**2 * torch.sin(self.n * np.pi * x)
+
+
+# ════════════════════════════════════════════════════════════════
+# 1-D Convection-Diffusion   -ε·u'' + β·u' = f  on [0,1],  u(0)=u(1)=0
+# ════════════════════════════════════════════════════════════════
+
+class ConvDiff1D(PDE1D):
+    """
+    Stationary convection-diffusion:   -ε·u'' + β·u' = f,  u(0)=u(1)=0
+
+    Exact solution (satisfies both Dirichlet BCs exactly):
+        u(x) = sin(πx) · (1 − e^((x−1)/ε))
+
+    The exponential term creates a boundary layer of width ~ε at x=1.
+    Away from the layer, u ≈ sin(πx) (outer solution).
+    Péclet number  Pe = β/ε  governs the layer sharpness.
+
+    Source term derived analytically:
+        f = ε·π²·sin(πx)·(1−E) + β·π·cos(πx)·(1−E) + 2π·cos(πx)·E + (1−β)·sin(πx)·E/ε
+        where  E = e^((x−1)/ε)
+    """
+
+    def __init__(self, eps: float = 0.1, beta: float = 1.0):
+        self.eps  = eps
+        self.beta = beta
+
+    @property
+    def name(self):
+        return f"ConvDiff  ε={self.eps:.4g}  Pe={self.beta/self.eps:.0f}"
+
+    def exact_u(self, x: torch.Tensor) -> torch.Tensor:
+        E = torch.exp((x - 1.0) / self.eps)
+        return torch.sin(np.pi * x) * (1.0 - E)
+
+    def source_f(self, x: torch.Tensor) -> torch.Tensor:
+        eps, beta = self.eps, self.beta
+        E = torch.exp((x - 1.0) / eps)
+        s = torch.sin(np.pi * x)
+        c = torch.cos(np.pi * x)
+        # u = s·(1-E),  u' = π·c·(1-E) - (s/ε)·E
+        # u'' = -π²·s·(1-E) - 2π·c·E/ε - s·E/ε²
+        # f = -ε·u'' + β·u'
+        #   = ε·π²·s·(1-E) + 2π·c·E + (s/ε)·E  +  β·π·c·(1-E) - β·(s/ε)·E
+        #   = (ε·π²·s + β·π·c)·(1-E)  +  (2π·c + (1-β)·s/ε)·E
+        term_outer = eps * np.pi**2 * s + beta * np.pi * c
+        term_layer = 2.0 * np.pi * c + (1.0 - beta) / eps * s
+        return term_outer * (1.0 - E) + term_layer * E

@@ -1,14 +1,14 @@
 """
 Collocation PINN  (strong form)
 ================================
-Enforces  -Δu = f  pointwise at random interior collocation points.
+Enforces  -ε·Δu + β·∂u/∂x₁ = f  pointwise at random interior points.
 
-Loss = mean( (-Δû - f)² )
+Loss = mean( residual² )
 
 û = mollifier(x) · net(x)  — automatically satisfies u=0 on ∂Ω.
 
-Works for both 1-D (domain [0,1]) and 2-D (domain [-1,1]²).
-The problem supplies its own mollifier and sampling helpers.
+Works for both 1-D and 2-D.  Pure diffusion (Poisson) is the special case
+ε=1, β=0.  Problem attributes  .eps  and  .beta  configure the operator.
 """
 
 import time
@@ -16,7 +16,6 @@ import torch
 from torch.autograd import Variable
 
 from ..network import FCNet
-from ..problems import PDE1D, PDE2D
 
 
 class CollocationPINN:
@@ -36,11 +35,12 @@ class CollocationPINN:
         self.n_interior  = n_interior
         self.net         = None
 
-    # ── laplacian (works for any dim) ────────────────────────────
+    # ── derivatives ──────────────────────────────────────────────
 
     @staticmethod
-    def _laplacian(u: torch.Tensor, x_var: Variable) -> torch.Tensor:
-        """Δu = Σᵢ ∂²u/∂xᵢ²  via two autograd passes."""
+    def _grad_and_laplacian(u: torch.Tensor,
+                             x_var: Variable) -> tuple:
+        """Returns (∇u  [N,dim],  Δu  [N,1])  via two autograd passes."""
         g = torch.autograd.grad(
             u, x_var, torch.ones_like(u), create_graph=True)[0]
         lap = torch.zeros_like(u)
@@ -49,17 +49,20 @@ class CollocationPINN:
             uii = torch.autograd.grad(
                 gi, x_var, torch.ones_like(gi), create_graph=True)[0][:, i:i+1]
             lap = lap + uii
-        return lap
+        return g, lap
 
     # ── public API ───────────────────────────────────────────────
 
     def solve(self, problem, epochs: int = 5000,
               log_every: int = 500) -> dict:
-        layers = problem.default_layers()
+        layers    = problem.default_layers()
         net       = FCNet(layers, self.activation)
         optimizer = torch.optim.Adam(net.parameters(), lr=self.lr)
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=self.step_size, gamma=self.gamma)
+
+        eps  = getattr(problem, 'eps',  1.0)
+        beta = getattr(problem, 'beta', 0.0)
 
         x_test, u_test = problem.test_grid()
         history = dict(epoch=[], loss_pde=[], l2_err=[], time=[])
@@ -71,9 +74,15 @@ class CollocationPINN:
             x_in  = Variable(problem.interior_points(self.n_interior),
                              requires_grad=True)
             u_hat = problem.mollifier(x_in) * net(x_in)
-            lap_u = self._laplacian(u_hat, x_in)
+            grad, lap_u = self._grad_and_laplacian(u_hat, x_in)
             f_val = problem.source_f(x_in)
-            loss  = torch.mean((-lap_u - f_val) ** 2)
+
+            # Residual: -ε·Δu + β·∂u/∂x₁ - f  (β=0 → Poisson)
+            residual = -eps * lap_u - f_val
+            if beta != 0.0 and problem.dim == 1:
+                residual = residual + beta * grad[:, 0:1]
+
+            loss = torch.mean(residual ** 2)
 
             optimizer.zero_grad()
             loss.backward()

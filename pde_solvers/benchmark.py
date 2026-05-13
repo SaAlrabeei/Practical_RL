@@ -20,7 +20,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-from .problems import SmoothPoisson1D, LayerPoisson1D, OscPoisson1D
+from .problems import SmoothPoisson1D, LayerPoisson1D, OscPoisson1D, ConvDiff1D
 from .solvers.collocation import CollocationPINN
 from .solvers.vpinn import VPINN
 from .solvers.deep_ritz import DeepRitz
@@ -136,7 +136,7 @@ def plot_1d_benchmark(all_results: dict, problems: list, solvers: list,
         ax.set_xticks(range(len(names)))
         ax.set_xticklabels(names, rotation=20, ha='right', fontsize=7)
 
-    fig.suptitle('1-D Poisson Benchmark  —  Collocation PINN vs VPINN vs Deep Ritz',
+    fig.suptitle('1-D Benchmark  —  Collocation PINN vs VPINN vs Deep Ritz',
                  fontsize=13, y=1.01)
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     print(f"\nPlot saved → {save_path}")
@@ -185,25 +185,27 @@ def main():
     log_every = 100  if args.quick else 500
 
     problems = [
-        SmoothPoisson1D(),          # Level 1 — smooth
-        LayerPoisson1D(k=15),       # Level 2 — interior layer
-        OscPoisson1D(n=8),          # Level 3 — oscillatory
+        ConvDiff1D(eps=0.1,   beta=1.0),   # Level 1 — Pe=10,  mild layer
+        ConvDiff1D(eps=0.01,  beta=1.0),   # Level 2 — Pe=100, sharp layer
+        ConvDiff1D(eps=0.001, beta=1.0),   # Level 3 — Pe=1000, very sharp layer
     ]
 
+    # More quadrature points help resolve the boundary layer for GL-based methods
     solvers = [
-        CollocationPINN(),
-        VPINN(),
-        DeepRitz(),
+        CollocationPINN(n_interior=3000),
+        VPINN(n_quad=100, n_test=20),
+        DeepRitz(n_quad=100),
     ]
 
     print(f"\n{'#'*60}")
-    print(f"#  1-D Poisson Benchmark   epochs={epochs}")
+    print(f"#  1-D Convection-Diffusion Benchmark   epochs={epochs}")
     print(f"#  Problems : {[p.name for p in problems]}")
     print(f"#  Solvers  : {[s.name for s in solvers]}")
     print(f"{'#'*60}")
 
     results = run_benchmark(problems, solvers, epochs=epochs, log_every=log_every)
-    plot_1d_benchmark(results, problems, solvers, save_path='poisson1d_benchmark.png')
+    plot_1d_benchmark(results, problems, solvers,
+                      save_path='convdiff1d_benchmark.png')
     print_table(results, problems, solvers)
 
 
