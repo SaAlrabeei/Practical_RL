@@ -24,12 +24,14 @@ from .problems import SmoothPoisson1D, LayerPoisson1D, OscPoisson1D, ConvDiff1D
 from .solvers.collocation import CollocationPINN
 from .solvers.vpinn import VPINN
 from .solvers.deep_ritz import DeepRitz
+from .solvers.supg_vpinn import SUPG_VPINN
 
 # ── colour registry (extend as new solvers are added) ────────────
 _STYLE = {
     'Collocation PINN': dict(color='#e74c3c', marker='o', ls='-',  lw=2),
     'VPINN':            dict(color='#3498db', marker='s', ls='--', lw=2),
     'Deep Ritz':        dict(color='#2ecc71', marker='^', ls=':',  lw=2),
+    'SUPG-VPINN':       dict(color='#9b59b6', marker='D', ls='-.',  lw=2),
 }
 
 
@@ -195,6 +197,7 @@ def main():
         CollocationPINN(n_interior=3000),
         VPINN(n_quad=100, n_test=20),
         DeepRitz(n_quad=100),
+        SUPG_VPINN(n_quad=100, n_test=20),
     ]
 
     print(f"\n{'#'*60}")
