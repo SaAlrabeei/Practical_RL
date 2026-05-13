@@ -23,6 +23,7 @@ import matplotlib.gridspec as gridspec
 from .problems import SmoothPoisson1D, LayerPoisson1D, OscPoisson1D
 from .solvers.collocation import CollocationPINN
 from .solvers.vpinn import VPINN
+from .solvers.deep_ritz import DeepRitz
 
 # ── colour registry (extend as new solvers are added) ────────────
 _STYLE = {
@@ -135,7 +136,7 @@ def plot_1d_benchmark(all_results: dict, problems: list, solvers: list,
         ax.set_xticks(range(len(names)))
         ax.set_xticklabels(names, rotation=20, ha='right', fontsize=7)
 
-    fig.suptitle('1-D Poisson Benchmark  —  Collocation PINN vs VPINN',
+    fig.suptitle('1-D Poisson Benchmark  —  Collocation PINN vs VPINN vs Deep Ritz',
                  fontsize=13, y=1.01)
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     print(f"\nPlot saved → {save_path}")
@@ -192,6 +193,7 @@ def main():
     solvers = [
         CollocationPINN(),
         VPINN(),
+        DeepRitz(),
     ]
 
     print(f"\n{'#'*60}")
