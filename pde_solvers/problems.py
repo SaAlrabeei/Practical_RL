@@ -38,11 +38,12 @@ import torch
 class PDE1D:
     """Abstract 1-D PDE on [0, 1] with homogeneous Dirichlet BC."""
 
-    dim:  int   = 1
-    lb:   float = 0.0
-    ub:   float = 1.0
-    eps:  float = 1.0   # diffusion coefficient
-    beta: float = 0.0   # convection coefficient (0 = pure diffusion / Poisson)
+    dim:      int   = 1
+    lb:       float = 0.0
+    ub:       float = 1.0
+    eps:      float = 1.0   # diffusion coefficient
+    beta:     float = 0.0   # convection coefficient (0 = pure diffusion / Poisson)
+    nonlinear: bool = False  # True → Deep Ritz uses LS energy
 
     @property
     def name(self) -> str:
@@ -73,6 +74,21 @@ class PDE1D:
 
     def l2_rel(self, u_pred: torch.Tensor, u_true: torch.Tensor) -> float:
         return (torch.norm(u_pred - u_true) / torch.norm(u_true)).item()
+
+    def pde_residual(self, u_hat, grad, lap_u, x):
+        """Pointwise PDE residual for collocation. Default: -eps·Δu + beta·∂u/∂x₁ - f."""
+        eps  = getattr(self, 'eps',  1.0)
+        beta = getattr(self, 'beta', 0.0)
+        f    = self.source_f(x)
+        res  = -eps * lap_u - f
+        if beta != 0.0 and self.dim == 1:
+            res = res + beta * grad[:, 0:1]
+        return res
+
+    def vpinn_lhs_1d(self, u_hat, du, w, v_vals, dv_dx1, eps):
+        """VPINN 1D bilinear form LHS. Default: ε∫u'v' + β∫u'v."""
+        beta = getattr(self, 'beta', 0.0)
+        return torch.sum(w * (eps * dv_dx1 + beta * v_vals) * du, dim=-1)
 
     def default_layers(self) -> list:
         return [1, 64, 64, 64, 64, 1]
@@ -248,3 +264,59 @@ class ConvDiff1D(PDE1D):
         term_outer = eps * np.pi**2 * s + beta * np.pi * c
         term_layer = 2.0 * np.pi * c + (1.0 - beta) / eps * s
         return term_outer * (1.0 - E) + term_layer * E
+
+
+# ════════════════════════════════════════════════════════════════
+# 1-D Burgers   -ν·u'' + u·u' = f  on [0,1],  u(0)=u(1)=0
+# ════════════════════════════════════════════════════════════════
+
+class Burgers1D(PDE1D):
+    """
+    Stationary viscous Burgers:  -ν·u'' + u·u' = f,  u(0)=u(1)=0
+
+    Same nonlinear convection structure as Navier-Stokes momentum equation.
+    ν is the kinematic viscosity (analogue of 1/Re).
+
+    Manufactured exact solution (satisfies both BCs exactly):
+        u(x) = sin(πx)·(1 − e^((x−1)/ν))
+
+    Boundary layer of width ~ν at x=1.
+
+    Source term derived analytically:
+        f = -ν·u'' + u·u'
+    """
+
+    nonlinear = True
+
+    def __init__(self, nu: float = 0.1):
+        self.eps  = nu      # diffusion coeff = viscosity
+        self.beta = 0.0     # no linear convection term
+
+    @property
+    def name(self):
+        return f"Burgers  ν={self.eps:.4g}  (1/Re≈{self.eps:.4g})"
+
+    def exact_u(self, x: torch.Tensor) -> torch.Tensor:
+        E = torch.exp((x - 1.0) / self.eps)
+        return torch.sin(np.pi * x) * (1.0 - E)
+
+    def source_f(self, x: torch.Tensor) -> torch.Tensor:
+        nu = self.eps
+        E  = torch.exp((x - 1.0) / nu)
+        s  = torch.sin(np.pi * x)
+        c  = torch.cos(np.pi * x)
+        u  = s * (1.0 - E)
+        up = np.pi * c * (1.0 - E) - (s / nu) * E
+        # -ν·u'' = ν·π²·s·(1-E) + 2π·c·E + (s/ν)·E
+        neg_nu_upp = nu * np.pi**2 * s * (1.0 - E) + 2 * np.pi * c * E + (s / nu) * E
+        return neg_nu_upp + u * up
+
+    def pde_residual(self, u_hat, grad, lap_u, x):
+        nu = self.eps
+        f  = self.source_f(x)
+        return -nu * lap_u + u_hat * grad[:, 0:1] - f
+
+    def vpinn_lhs_1d(self, u_hat, du, w, v_vals, dv_dx1, eps):
+        # Weak form: ν∫u'v' - ½∫u²v'   (IBP of ∫uu'v = -½∫u²v')
+        u_sq = u_hat.squeeze() ** 2
+        return torch.sum(w * dv_dx1 * (eps * du - 0.5 * u_sq), dim=-1)

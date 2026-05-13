@@ -61,9 +61,6 @@ class CollocationPINN:
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=self.step_size, gamma=self.gamma)
 
-        eps  = getattr(problem, 'eps',  1.0)
-        beta = getattr(problem, 'beta', 0.0)
-
         x_test, u_test = problem.test_grid()
         history = dict(epoch=[], loss_pde=[], l2_err=[], time=[])
         t0 = time.time()
@@ -75,13 +72,7 @@ class CollocationPINN:
                              requires_grad=True)
             u_hat = problem.mollifier(x_in) * net(x_in)
             grad, lap_u = self._grad_and_laplacian(u_hat, x_in)
-            f_val = problem.source_f(x_in)
-
-            # Residual: -ε·Δu + β·∂u/∂x₁ - f  (β=0 → Poisson)
-            residual = -eps * lap_u - f_val
-            if beta != 0.0 and problem.dim == 1:
-                residual = residual + beta * grad[:, 0:1]
-
+            residual = problem.pde_residual(u_hat, grad, lap_u, x_in)
             loss = torch.mean(residual ** 2)
 
             optimizer.zero_grad()

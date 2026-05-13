@@ -1,8 +1,8 @@
 """
-Benchmark runner  —  1-D Poisson comparison.
+Benchmark runner  —  1-D Burgers comparison.
 
-Runs all registered solvers on the three difficulty levels and produces:
-  poisson1d_benchmark.png  — one row per problem, four panels each:
+Runs all four solvers on three viscosity levels (ν=0.1, 0.01, 0.001) and produces:
+  burgers1d_benchmark.png  — one row per problem, four panels each:
       (a) convergence curve        (b) solution comparison
       (c) point-wise |error|       (d) final L2 bar chart
 
@@ -20,7 +20,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-from .problems import SmoothPoisson1D, LayerPoisson1D, OscPoisson1D, ConvDiff1D
+from .problems import SmoothPoisson1D, LayerPoisson1D, OscPoisson1D, ConvDiff1D, Burgers1D
 from .solvers.collocation import CollocationPINN
 from .solvers.vpinn import VPINN
 from .solvers.deep_ritz import DeepRitz
@@ -62,7 +62,7 @@ def run_benchmark(problems: list, solvers: list,
 # ════════════════════════════════════════════════════════════════
 
 def plot_1d_benchmark(all_results: dict, problems: list, solvers: list,
-                      save_path: str = 'poisson1d_benchmark.png'):
+                      save_path: str = 'burgers1d_benchmark.png'):
     """
     Grid: rows = problems,  columns = [convergence | solution | |error| | bar]
     """
@@ -138,7 +138,7 @@ def plot_1d_benchmark(all_results: dict, problems: list, solvers: list,
         ax.set_xticks(range(len(names)))
         ax.set_xticklabels(names, rotation=20, ha='right', fontsize=7)
 
-    fig.suptitle('1-D Benchmark  —  Collocation PINN vs VPINN vs Deep Ritz',
+    fig.suptitle('1-D Burgers Benchmark  —  Collocation vs VPINN vs Deep Ritz vs SUPG-VPINN',
                  fontsize=13, y=1.01)
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     print(f"\nPlot saved → {save_path}")
@@ -187,9 +187,9 @@ def main():
     log_every = 100  if args.quick else 500
 
     problems = [
-        ConvDiff1D(eps=0.1,   beta=1.0),   # Level 1 — Pe=10,  mild layer
-        ConvDiff1D(eps=0.01,  beta=1.0),   # Level 2 — Pe=100, sharp layer
-        ConvDiff1D(eps=0.001, beta=1.0),   # Level 3 — Pe=1000, very sharp layer
+        Burgers1D(nu=0.1),    # ν=0.1  — moderate nonlinearity + mild layer
+        Burgers1D(nu=0.01),   # ν=0.01 — strong nonlinearity + sharp layer
+        Burgers1D(nu=0.001),  # ν=0.001 — very sharp layer (high-Re analogue)
     ]
 
     # More quadrature points help resolve the boundary layer for GL-based methods
@@ -201,14 +201,14 @@ def main():
     ]
 
     print(f"\n{'#'*60}")
-    print(f"#  1-D Convection-Diffusion Benchmark   epochs={epochs}")
+    print(f"#  1-D Burgers Benchmark   epochs={epochs}")
     print(f"#  Problems : {[p.name for p in problems]}")
     print(f"#  Solvers  : {[s.name for s in solvers]}")
     print(f"{'#'*60}")
 
     results = run_benchmark(problems, solvers, epochs=epochs, log_every=log_every)
     plot_1d_benchmark(results, problems, solvers,
-                      save_path='convdiff1d_benchmark.png')
+                      save_path='burgers1d_benchmark.png')
     print_table(results, problems, solvers)
 
 

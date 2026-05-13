@@ -133,8 +133,14 @@ class SUPG_VPINN:
 
         eps  = getattr(problem, 'eps',  1.0)
         beta = getattr(problem, 'beta', 0.0)
+        # For nonlinear problems with no linear convection, use characteristic
+        # velocity for τ computation (approx mean |u| for our Burgers solution)
+        if getattr(problem, 'nonlinear', False) and beta == 0.0:
+            beta_eff = 0.5
+        else:
+            beta_eff = beta
 
-        self._setup_1d(eps, beta)
+        self._setup_1d(eps, beta_eff)
         tau = self.tau
 
         layers    = problem.default_layers()
@@ -155,14 +161,11 @@ class SUPG_VPINN:
         v_star    = self.v_vals + tb * self.dv_dx        # (Nt, Nq)
         dv_star   = self.dv_dx  + tb * self.d2v_dx2     # (Nt, Nq)
 
-        # LHS coefficient combined:  ε·(v^*)' + β·v^*
-        lhs_coeff = eps * dv_star + beta * v_star        # (Nt, Nq)
-
         history = dict(epoch=[], loss_pde=[], l2_err=[], time=[])
         t0 = time.time()
 
         if log_every <= epochs:
-            print(f"    τ = {tau:.3e}  (Pe_h = {abs(beta)/(self.n_test * max(eps,1e-12)):.2f})")
+            print(f"    τ = {tau:.3e}  (Pe_h = {abs(beta_eff)/(self.n_test * max(eps,1e-12)):.2f})")
 
         for epoch in range(1, epochs + 1):
             net.train()
@@ -176,9 +179,8 @@ class SUPG_VPINN:
             du = u_grad[:, 0]       # (Nq,)
             w  = self.w_quad        # (Nq,)
 
-            # a(û, v^*) = ∫ (ε·(v^*)' + β·v^*) · û' dx
-            lhs = torch.sum(w * lhs_coeff * du, dim=-1)   # (Nt,)
-            # l(v^*) = ∫ f · v^* dx
+            # a(û, v^*) using SUPG-modified test functions
+            lhs = problem.vpinn_lhs_1d(u_hat, du, w, v_star, dv_star, eps)
             rhs = torch.sum(w * v_star * f_quad, dim=-1)  # (Nt,)
 
             loss = torch.mean((lhs - rhs) ** 2)

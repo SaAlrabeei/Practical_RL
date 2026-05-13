@@ -85,7 +85,7 @@ class DeepRitz:
 
         eps  = getattr(problem, 'eps',  1.0)
         beta = getattr(problem, 'beta', 0.0)
-        use_ls = (beta != 0.0)   # least-squares mode for non-symmetric operators
+        use_ls = (beta != 0.0) or getattr(problem, 'nonlinear', False)   # least-squares mode for non-symmetric or nonlinear operators
 
         layers    = problem.default_layers()
         net       = FCNet(layers, self.activation)
@@ -111,10 +111,9 @@ class DeepRitz:
             w     = self.w_quad                                 # (Nq,)
 
             if use_ls:
-                # Least-squares: ½ ∫(-ε·u'' + β·u' − f)² dx  (needs u'')
+                # Least-squares: ½ ∫(residual)² dx  (needs u'')
                 g, lap_u = self._grad_and_laplacian(u_hat, x_var)
-                conv = beta * g[:, 0:1] if problem.dim == 1 else 0.0
-                res  = -eps * lap_u + conv - f_quad.unsqueeze(1)  # (Nq,1)
+                res  = problem.pde_residual(u_hat, g, lap_u, self.x_quad)
                 loss = 0.5 * torch.sum(w * res.squeeze() ** 2)
             else:
                 # Standard energy: ½ ∫|∇u|² − ∫f·u

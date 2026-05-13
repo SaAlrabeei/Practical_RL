@@ -185,12 +185,8 @@ class VPINN:
             w = self.w_quad   # (Nq,)
 
             if problem.dim == 1:
-                du = u_grad[:, 0]                              # (Nq,)
-                # a(û,v_k) = ∫ ε·û'·v_k' dx + ∫ β·û'·v_k dx
-                # Pure diffusion (β=0): just ε·∫û'·v_k'
-                lhs = torch.sum(
-                    w * (eps * self.dv_dx1 + beta * self.v_vals) * du,
-                    dim=-1)                                        # (Nt,)
+                du  = u_grad[:, 0]                              # (Nq,)
+                lhs = problem.vpinn_lhs_1d(u_hat, du, w, self.v_vals, self.dv_dx1, eps)
                 rhs = torch.sum(w * self.v_vals * f_quad, dim=-1)  # (Nt,)
             else:
                 du1 = u_grad[:, 0]; du2 = u_grad[:, 1]
