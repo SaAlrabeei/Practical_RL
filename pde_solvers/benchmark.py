@@ -25,6 +25,7 @@ from .solvers.collocation import CollocationPINN
 from .solvers.vpinn import VPINN
 from .solvers.deep_ritz import DeepRitz
 from .solvers.supg_vpinn import SUPG_VPINN
+from .solvers.lsvpinn import LSVPINN
 
 # ── colour registry (extend as new solvers are added) ────────────
 _STYLE = {
@@ -32,6 +33,7 @@ _STYLE = {
     'VPINN':            dict(color='#3498db', marker='s', ls='--', lw=2),
     'Deep Ritz':        dict(color='#2ecc71', marker='^', ls=':',  lw=2),
     'SUPG-VPINN':       dict(color='#9b59b6', marker='D', ls='-.',  lw=2),
+    'LS-VPINN':         dict(color='#f39c12', marker='v', ls='-',  lw=2),
 }
 
 
@@ -138,7 +140,7 @@ def plot_1d_benchmark(all_results: dict, problems: list, solvers: list,
         ax.set_xticks(range(len(names)))
         ax.set_xticklabels(names, rotation=20, ha='right', fontsize=7)
 
-    fig.suptitle('1-D Burgers Benchmark  —  Collocation vs VPINN vs Deep Ritz vs SUPG-VPINN',
+    fig.suptitle('1-D Burgers Benchmark  —  Collocation / VPINN / Deep Ritz / SUPG-VPINN / LS-VPINN',
                  fontsize=13, y=1.01)
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     print(f"\nPlot saved → {save_path}")
@@ -198,6 +200,7 @@ def main():
         VPINN(n_quad=100, n_test=20),
         DeepRitz(n_quad=100),
         SUPG_VPINN(n_quad=100, n_test=20),
+        LSVPINN(n_quad=100, n_test=20),
     ]
 
     print(f"\n{'#'*60}")
