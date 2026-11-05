@@ -366,9 +366,11 @@ class LidDrivenCavity2D:
                -0.27805, -0.38289, -0.29730, -0.22220, -0.20196, -0.18109,  0.00000],
     }
 
-    def __init__(self, Re_min: float = 100.0, Re_max: float = 1000.0):
-        self.Re_min = Re_min
-        self.Re_max = Re_max
+    def __init__(self, Re_min: float = 100.0, Re_max: float = 1000.0,
+                 smooth_lid: bool = True):
+        self.Re_min     = Re_min
+        self.Re_max     = Re_max
+        self.smooth_lid = smooth_lid
 
     def _pack(self, xy: np.ndarray, Re: float) -> torch.Tensor:
         Re_col = np.full((len(xy), 1), Re / self.Re_ref)
@@ -382,10 +384,22 @@ class LidDrivenCavity2D:
         xy = np.random.rand(n, 2)
         return self._pack(xy, Re)
 
+    def lid_velocity(self, x: np.ndarray) -> np.ndarray:
+        """
+        Lid BC profile u(x) at y=1.
+        smooth_lid=True : u = 16x²(1-x)²  — zero at corners, peak≈1 at centre.
+        smooth_lid=False: u = 1            — sharp discontinuity at corners.
+        The smooth profile removes the pressure/velocity singularity that makes
+        standard PINN training stall near the top corners.
+        """
+        if self.smooth_lid:
+            return 16.0 * x**2 * (1.0 - x)**2
+        return np.ones_like(x)
+
     def bc_points(self, n_per_side: int, Re: float) -> tuple:
         """
         Returns (x_bc [4n,3], u_bc [4n,1], v_bc [4n,1]).
-        Sides: bottom y=0 (u=0,v=0), top y=1 (u=1,v=0),
+        Sides: bottom y=0 (u=0,v=0), top y=1 (u=u_lid,v=0),
                left x=0 (u=0,v=0), right x=1 (u=0,v=0).
         """
         t  = np.linspace(0, 1, n_per_side)
@@ -397,8 +411,9 @@ class LidDrivenCavity2D:
             np.stack([z, t], 1),   # left
             np.stack([o, t], 1),   # right
         ])
-        u_bc = np.concatenate([z, o, z, z])[:, None]  # u=1 on top only
-        v_bc = np.zeros((4 * n_per_side, 1))
+        u_top = self.lid_velocity(t)
+        u_bc  = np.concatenate([z, u_top, z, z])[:, None]
+        v_bc  = np.zeros((4 * n_per_side, 1))
         return (self._pack(pts, Re),
                 torch.tensor(u_bc, dtype=torch.float32),
                 torch.tensor(v_bc, dtype=torch.float32))

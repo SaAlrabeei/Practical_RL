@@ -131,10 +131,11 @@ def main():
                         help='Use Fourier feature network')
     args = parser.parse_args()
 
-    epochs    = 2000  if args.quick else 10000
-    log_every = 500   if args.quick else 1000
+    epochs     = 2000  if args.quick else 15000
+    log_every  = 500   if args.quick else 1000
+    n_pretrain = 500   if args.quick else 2000
 
-    problem = LidDrivenCavity2D(Re_min=100.0, Re_max=1000.0)
+    problem = LidDrivenCavity2D(Re_min=100.0, Re_max=1000.0, smooth_lid=True)
 
     solver = NSCollocation(
         n_interior = 2000,
@@ -143,10 +144,10 @@ def main():
         fourier_dim= 64,
         sigma      = 2.0,
         lr         = 1e-3,
-        step_size  = 2000,
+        step_size  = 3000,   # slower LR decay over 15k epochs
         gamma      = 0.5,
         lam_pde    = 1.0,
-        lam_bc     = 10.0,
+        lam_bc     = 100.0,  # up from 10 — BCs must dominate early
         lam_pref   = 1.0,
     )
 
@@ -156,7 +157,8 @@ def main():
     print(f"{'#'*60}\n")
 
     t0 = time.time()
-    history = solver.solve(problem, epochs=epochs, log_every=log_every)
+    history = solver.solve(problem, epochs=epochs, log_every=log_every,
+                           n_pretrain=n_pretrain)
     elapsed = time.time() - t0
     print(f"\n  Total training time: {elapsed:.1f}s")
 

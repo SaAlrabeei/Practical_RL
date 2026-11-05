@@ -109,7 +109,13 @@ class NSCollocation:
     # ── public API ───────────────────────────────────────────────
 
     def solve(self, problem, epochs: int = 10000,
-              log_every: int = 1000) -> dict:
+              log_every: int = 1000,
+              n_pretrain: int = 2000) -> dict:
+        """
+        n_pretrain: epochs of BC-only training before PDE loss is switched on.
+        This curriculum ensures the network first satisfies the BCs, then adjusts
+        for physics — avoids the PDE loss drowning out the BC signal early on.
+        """
 
         net       = self._make_net()
         optimizer = torch.optim.Adam(net.parameters(), lr=self.lr)
@@ -119,7 +125,10 @@ class NSCollocation:
         history = dict(epoch=[], loss_pde=[], loss_bc=[], time=[])
         t0 = time.time()
         arch = "Fourier" if self.fourier else "standard"
-        print(f"    arch={arch}  Re=[{problem.Re_min:.0f},{problem.Re_max:.0f}]")
+        lid  = "smooth" if problem.smooth_lid else "sharp"
+        print(f"    arch={arch}  lid={lid}  Re=[{problem.Re_min:.0f},{problem.Re_max:.0f}]")
+        if n_pretrain > 0:
+            print(f"    curriculum: {n_pretrain} epochs BC-only, then full loss")
 
         for epoch in range(1, epochs + 1):
             net.train()
@@ -159,9 +168,14 @@ class NSCollocation:
             p_ref  = net(x_ref)[:, 2:3]
             loss_p = p_ref**2
 
-            loss = (self.lam_pde  * loss_pde
-                  + self.lam_bc   * loss_bc
-                  + self.lam_pref * loss_p)
+            if epoch <= n_pretrain:
+                # Phase 1: satisfy BCs first, PDE off
+                loss = self.lam_bc * loss_bc + self.lam_pref * loss_p
+            else:
+                # Phase 2: full physics + BC loss
+                loss = (self.lam_pde  * loss_pde
+                      + self.lam_bc   * loss_bc
+                      + self.lam_pref * loss_p)
 
             optimizer.zero_grad()
             loss.backward()
@@ -175,8 +189,9 @@ class NSCollocation:
                 history['time'].append(time.time() - t0)
 
                 if epoch % log_every == 0:
-                    lr_now = optimizer.param_groups[0]['lr']
-                    print(f"    epoch {epoch:6d} | Re={Re:6.0f}"
+                    lr_now   = optimizer.param_groups[0]['lr']
+                    phase    = "BC" if epoch <= n_pretrain else "full"
+                    print(f"    epoch {epoch:6d} [{phase:4s}] | Re={Re:6.0f}"
                           f" | pde={loss_pde.item():.3e}"
                           f" | bc={loss_bc.item():.3e}"
                           f" | lr={lr_now:.1e}")
