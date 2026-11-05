@@ -320,3 +320,100 @@ class Burgers1D(PDE1D):
         # Weak form: ν∫u'v' - ½∫u²v'   (IBP of ∫uu'v = -½∫u²v')
         u_sq = u_hat.squeeze() ** 2
         return torch.sum(w * dv_dx1 * (eps * du - 0.5 * u_sq), dim=-1)
+
+
+# ════════════════════════════════════════════════════════════════
+# 2-D Lid-Driven Cavity   (parametric in Re)
+# ════════════════════════════════════════════════════════════════
+
+class LidDrivenCavity2D:
+    """
+    2D steady incompressible Navier-Stokes: lid-driven cavity.
+
+    Domain : [0,1]²
+    BCs    : top wall (y=1)   u=1, v=0   (moving lid)
+             other walls      u=0, v=0   (no-slip)
+    PDE    :
+        continuity  : ∂u/∂x + ∂v/∂y = 0
+        x-momentum  : u·∂u/∂x + v·∂u/∂y + ∂p/∂x − (1/Re)·(u_xx + u_yy) = 0
+        y-momentum  : u·∂v/∂x + v·∂v/∂y + ∂p/∂y − (1/Re)·(v_xx + v_yy) = 0
+
+    Parametric in Re: network input is (x, y, Re/Re_ref) with Re_ref=1000.
+    Training samples Re uniformly from [Re_min, Re_max] each step, so a single
+    network generalises across all Reynolds numbers in that range.
+
+    Validation: Ghia et al. (1982), Computers & Fluids, 10(4), 339-348.
+    Tabulated u-velocity on the vertical centreline x=0.5 for Re=100, 400, 1000.
+    """
+
+    name    = "Lid-Driven Cavity 2D (NS)"
+    dim     = 2
+    Re_ref  = 1000.0
+
+    # Ghia et al. (1982) Table 1: vertical centreline x=0.5, u-velocity
+    GHIA_Y = [1.0000, 0.9766, 0.9688, 0.9609, 0.9531,
+              0.8516, 0.7344, 0.6172, 0.5000, 0.4531,
+              0.2813, 0.1719, 0.1016, 0.0703, 0.0625, 0.0547, 0.0000]
+    GHIA_U = {
+        100:  [ 1.00000,  0.84123,  0.78871,  0.73722,  0.68717,
+                0.23151,  0.00332, -0.13641, -0.20581, -0.21090,
+               -0.15662, -0.10150, -0.06434, -0.04775, -0.04192, -0.03717,  0.00000],
+        400:  [ 1.00000,  0.75837,  0.68439,  0.61756,  0.55892,
+                0.29093,  0.16256,  0.02135, -0.11477, -0.17119,
+               -0.32726, -0.24299, -0.14612, -0.10338, -0.09266, -0.08186,  0.00000],
+        1000: [ 1.00000,  0.65928,  0.57492,  0.51117,  0.46604,
+                0.33304,  0.18719,  0.05702, -0.06080, -0.10648,
+               -0.27805, -0.38289, -0.29730, -0.22220, -0.20196, -0.18109,  0.00000],
+    }
+
+    def __init__(self, Re_min: float = 100.0, Re_max: float = 1000.0):
+        self.Re_min = Re_min
+        self.Re_max = Re_max
+
+    def _pack(self, xy: np.ndarray, Re: float) -> torch.Tensor:
+        Re_col = np.full((len(xy), 1), Re / self.Re_ref)
+        return torch.tensor(np.hstack([xy, Re_col]), dtype=torch.float32)
+
+    def sample_Re(self) -> float:
+        return float(np.random.uniform(self.Re_min, self.Re_max))
+
+    def interior_points(self, n: int, Re: float) -> torch.Tensor:
+        """n random points strictly inside (0,1)²."""
+        xy = np.random.rand(n, 2)
+        return self._pack(xy, Re)
+
+    def bc_points(self, n_per_side: int, Re: float) -> tuple:
+        """
+        Returns (x_bc [4n,3], u_bc [4n,1], v_bc [4n,1]).
+        Sides: bottom y=0 (u=0,v=0), top y=1 (u=1,v=0),
+               left x=0 (u=0,v=0), right x=1 (u=0,v=0).
+        """
+        t  = np.linspace(0, 1, n_per_side)
+        z  = np.zeros(n_per_side)
+        o  = np.ones(n_per_side)
+        pts = np.vstack([
+            np.stack([t, z], 1),   # bottom
+            np.stack([t, o], 1),   # top  (lid)
+            np.stack([z, t], 1),   # left
+            np.stack([o, t], 1),   # right
+        ])
+        u_bc = np.concatenate([z, o, z, z])[:, None]  # u=1 on top only
+        v_bc = np.zeros((4 * n_per_side, 1))
+        return (self._pack(pts, Re),
+                torch.tensor(u_bc, dtype=torch.float32),
+                torch.tensor(v_bc, dtype=torch.float32))
+
+    def pressure_ref_point(self, Re: float) -> torch.Tensor:
+        """Single point at corner (0,0) used to fix pressure gauge."""
+        return self._pack(np.array([[0.0, 0.0]]), Re)
+
+    def test_grid(self, n: int = 50, Re: float = 100.0) -> torch.Tensor:
+        """Regular n×n grid in [0,1]², returns (n²,3) tensor."""
+        t  = np.linspace(0, 1, n)
+        xx, yy = np.meshgrid(t, t, indexing='ij')
+        xy = np.stack([xx.flatten(), yy.flatten()], axis=1)
+        return self._pack(xy, Re)
+
+    def ghia_centreline(self, Re: int) -> tuple:
+        """(y_vals np.ndarray, u_vals np.ndarray) from Ghia et al. for Re in {100,400,1000}."""
+        return np.array(self.GHIA_Y), np.array(self.GHIA_U[Re])

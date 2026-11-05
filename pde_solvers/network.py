@@ -35,3 +35,36 @@ class FCNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
+
+
+class FourierFCNet(nn.Module):
+    """
+    Fourier-feature network for multi-scale PDEs.
+
+    Input x is first encoded as:
+        γ(x) = [sin(B·x), cos(B·x)]   where B ~ N(0, σ²) is FIXED (not trained).
+
+    Then a standard FCNet maps γ(x) → output.
+
+    The random Fourier projection lifts the input into a high-frequency basis,
+    breaking the low-frequency spectral bias that standard MLPs exhibit.
+
+    Reference: Tancik et al. NeurIPS 2020; Wang et al. CMAME 2021.
+    """
+
+    def __init__(self, in_dim: int, out_dim: int,
+                 fourier_dim: int = 64,
+                 sigma: float = 1.0,
+                 hidden: list = None,
+                 activation: str = 'tanh'):
+        super().__init__()
+        if hidden is None:
+            hidden = [128, 128, 128, 128]
+        B = torch.randn(in_dim, fourier_dim) * sigma
+        self.register_buffer('B', B)
+        self.net = FCNet([2 * fourier_dim] + hidden + [out_dim], activation)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        proj = x @ self.B
+        feat = torch.cat([torch.sin(proj), torch.cos(proj)], dim=-1)
+        return self.net(feat)
