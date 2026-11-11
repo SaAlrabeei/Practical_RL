@@ -1,0 +1,6 @@
+data/
+data_synth/
+runs/
+predictions/
+__pycache__/
+*.pt

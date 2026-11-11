@@ -1,0 +1,35 @@
+# Hyper-parameters follow the manuscript ("Model development and training workflow").
+data:
+  root: data                 # folder produced by cvat_to_dataset.py / make_synthetic_data.py
+  work_size: 768             # images (and instance masks) are first resized so the long side = work_size
+  seg_size: 256              # input size of the segmentation branch (paper: 256 x 256)
+  crop_size: 224             # size of each per-tooth ROI crop fed to the classification branch
+  roi_pad: 0.25              # fractional padding added around each tooth box before cropping
+  num_workers: 2
+
+model:
+  encoder: efficientnet-b4
+  encoder_weights: imagenet  # set to null to train from scratch (no internet)
+  num_classes: 3             # RT1, RT2, RT3
+  cls_hidden: 256
+  dropout: 0.3
+
+train:
+  epochs: 40
+  batch_size: 2
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  early_stop_patience: 10    # epochs without improvement in validation total loss
+  lr_patience: 4             # ReduceLROnPlateau patience
+  lr_factor: 0.5
+  dice_weight: 0.5           # seg loss = 0.5 * Dice + 0.5 * BCE
+  bce_weight: 0.5
+  cls_weight: 0.8            # total = seg + 0.8 * class-weighted CE
+  roi_jitter: 0.1            # random box jitter during training (simulates imperfect predicted masks)
+  seed: 42
+  out_dir: runs/exp1
+
+inference:
+  mask_threshold: 0.5
+  min_component_area: 150    # pixels at work_size; smaller predicted blobs are ignored
+  match_iou: 0.1             # IoU needed to match a predicted ROI to a ground-truth tooth
