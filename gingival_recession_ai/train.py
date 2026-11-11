@@ -33,8 +33,9 @@ def make_loader(cfg, split, train):
     return ds, dl
 
 
-def run_epoch(model, loader, loss_fn, device, optimizer=None):
+def run_epoch(model, loader, loss_fn, device, optimizer=None, scaler=None):
     train = optimizer is not None
+    use_amp = scaler is not None and scaler.is_enabled()
     model.train(train)
     tot = {"loss": 0.0, "seg": 0.0, "cls": 0.0, "n": 0}
     dices, ious, correct, nteeth = [], [], 0, 0
@@ -42,12 +43,15 @@ def run_epoch(model, loader, loss_fn, device, optimizer=None):
         for b in tqdm(loader, leave=False, desc="train" if train else "val"):
             img, mask = b["image"].to(device), b["mask"].to(device)
             crops, labels = b["crops"].to(device), b["labels"].to(device)
-            seg_logits, cls_logits = model(img, crops)
+            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_amp):
+                seg_logits, cls_logits = model(img, crops)
+            seg_logits, cls_logits = seg_logits.float(), cls_logits.float()
             loss, seg_l, cls_l = loss_fn(seg_logits, mask, cls_logits, labels)
             if train:
                 optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
             n = img.shape[0]
             tot["loss"] += loss.item() * n; tot["seg"] += seg_l.item() * n; tot["cls"] += cls_l.item() * n
             tot["n"] += n
@@ -68,6 +72,8 @@ def main():
     ap.add_argument("--data"); ap.add_argument("--out"); ap.add_argument("--epochs", type=int)
     ap.add_argument("--no-pretrained", action="store_true", help="do not download ImageNet weights")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    ap.add_argument("--no-amp", action="store_true", help="disable mixed precision on GPU")
+    ap.add_argument("--workers", type=int, help="DataLoader workers (use 0 if Windows gives errors)")
     args = ap.parse_args()
 
     cfg = yaml.safe_load(open(args.config))
@@ -75,6 +81,7 @@ def main():
     if args.out: cfg["train"]["out_dir"] = args.out
     if args.epochs: cfg["train"]["epochs"] = args.epochs
     if args.no_pretrained: cfg["model"]["encoder_weights"] = None
+    if args.workers is not None: cfg["data"]["num_workers"] = args.workers
     t = cfg["train"]
     set_seed(t["seed"])
     os.makedirs(t["out_dir"], exist_ok=True)
@@ -93,13 +100,19 @@ def main():
     m = cfg["model"]
     model = MultiTaskModel(m["encoder"], m["encoder_weights"], m["num_classes"], m["cls_hidden"], m["dropout"]).to(args.device)
     loss_fn = MultiTaskLoss(class_weights, t["dice_weight"], t["bce_weight"], t["cls_weight"]).to(args.device)
+    use_amp = args.device.startswith("cuda") and not args.no_amp
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    if args.device.startswith("cuda"):
+        print(f"GPU: {torch.cuda.get_device_name(0)} | mixed precision: {use_amp}")
+    else:
+        print("WARNING: no GPU found - training on CPU will be slow")
     opt = torch.optim.AdamW(model.parameters(), lr=t["lr"], weight_decay=t["weight_decay"])
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", factor=t["lr_factor"], patience=t["lr_patience"])
 
     best, bad, history = float("inf"), 0, []
     for epoch in range(1, t["epochs"] + 1):
-        tr = run_epoch(model, train_dl, loss_fn, args.device, opt)
-        va = run_epoch(model, val_dl, loss_fn, args.device)
+        tr = run_epoch(model, train_dl, loss_fn, args.device, opt, scaler)
+        va = run_epoch(model, val_dl, loss_fn, args.device, scaler=scaler)
         sched.step(va["loss"])
         history.append({"epoch": epoch, "lr": opt.param_groups[0]["lr"],
                         **{f"train_{k}": v for k, v in tr.items()}, **{f"val_{k}": v for k, v in va.items()}})

@@ -46,6 +46,24 @@ cd gingival_recession_ai
 pip install -r requirements.txt     # use a CUDA build of torch if you have a GPU
 ```
 
+### Running on your own laptop with an NVIDIA GPU
+
+1. Install the NVIDIA driver, then check that `nvidia-smi` shows your GPU.
+2. Install Python 3.10–3.12 (or Miniconda).
+3. Create an environment, install the **CUDA build** of PyTorch first, then the rest:
+   ```bash
+   python -m venv .venv
+   # Windows: .venv\Scripts\activate      Linux/macOS: source .venv/bin/activate
+   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+   pip install -r requirements.txt
+   ```
+4. Check that the GPU works and the model fits in its memory: `python check_gpu.py`
+5. Train as in step 3 below. `train.py` uses the GPU and mixed precision automatically.
+   On Windows, if the data loader raises errors, add `--workers 0`.
+
+About 4 GB of GPU memory is enough. A 4–8 GB laptop GPU with 149 images should take
+roughly 1–2 minutes per epoch. Apple-silicon Macs (no CUDA) also work on CPU, but slowly.
+
 ## 2. Annotate in CVAT
 
 For **each recession-affected tooth**, draw **one polygon** (or brush mask) around the
